@@ -13,38 +13,55 @@ def extract_pdf_data(pdf_file):
         text = ""
         for page in pdf.pages:
             text += page.extract_text() + "\n"
-    
+
+    # Print the extracted text for debugging
+    # Uncomment the next line to see the text in the console
+    # print(text)
+
     # Parse the text to extract relevant information
     data = {
         "name": re.search(r"^(.*?)\n", text).group(1).strip(),
         "personal_details": {
-            "jobs": re.search(r"Jobs: (.*?)\n", text).group(1),
-            "colleges": re.search(r"Colleges: (.*?)\n", text).group(1),
-            "emails": re.search(r"Emails: (.*?)\n", text).group(1),
-            "locations": re.search(r"Locations: (.*?)\n", text).group(1)
+            "jobs": re.search(r"Jobs:\s*(.*?)\n", text).group(1),
+            "colleges": re.search(r"Colleges:\s*(.*?)\n", text).group(1),
+            "emails": re.search(r"Emails:\s*(.*?)\n", text).group(1),
+            "locations": re.search(r"Locations:\s*(.*?)\n", text).group(1)
         },
         "social_profiles": [],
         "no_matches_platforms": [],
-        "metrics": {
-            "platforms_evaluated": int(re.search(r"(\d+)\nSocial platforms evaluated", text).group(1)),
-            "flagged_posts": int(re.search(r"(\d+)\nTotal flagged posts", text).group(1)),
-            "flagged_categories": len(re.findall(r"potential issues found:", text))
-        },
+        "metrics": {},
         "flagged_posts": []
     }
-    
+
+    # Extract metrics with error handling
+    platforms_evaluated_match = re.search(r"(\d+)\s*Social platforms evaluated", text)
+    if platforms_evaluated_match:
+        data["metrics"]["platforms_evaluated"] = int(platforms_evaluated_match.group(1))
+    else:
+        data["metrics"]["platforms_evaluated"] = 0  # or handle as you see fit
+
+    flagged_posts_match = re.search(r"(\d+)\s*Total flagged posts", text)
+    if flagged_posts_match:
+        data["metrics"]["flagged_posts"] = int(flagged_posts_match.group(1))
+    else:
+        data["metrics"]["flagged_posts"] = 0
+
+    data["metrics"]["flagged_categories"] = len(re.findall(r"potential issues found:", text))
+
     # Extract social profiles
-    profiles_text = re.search(r"Social media profiles found:\n(.*?)\n\n", text, re.DOTALL).group(1)
-    data["social_profiles"] = [{"platform": "Unknown", "username": username.strip(), "url": ""} 
-                             for username in profiles_text.split("\n")]
-    
+    profiles_text_match = re.search(r"Social media profiles found:\s*(.*?)\n\n", text, re.DOTALL)
+    if profiles_text_match:
+        profiles_text = profiles_text_match.group(1)
+        data["social_profiles"] = [{"platform": "Unknown", "username": username.strip(), "url": ""}
+                                   for username in profiles_text.split("\n") if username.strip()]
+
     # Extract platforms with no matches
-    no_matches = re.search(r"Social media platforms with no matches found:\n(.*?)\n\n", text, re.DOTALL)
-    if no_matches:
-        data["no_matches_platforms"] = [platform.strip() for platform in no_matches.group(1).split("\n")]
-    
+    no_matches_match = re.search(r"Social media platforms with no matches found:\s*(.*?)\n\n", text, re.DOTALL)
+    if no_matches_match:
+        data["no_matches_platforms"] = [platform.strip() for platform in no_matches_match.group(1).split("\n") if platform.strip()]
+
     # Extract flagged posts
-    posts = re.findall(r"(.*?)\nPosted on • (.*?)\n.*?View original post", text, re.DOTALL)
+    posts = re.findall(r"(.*?)\nPosted on\s*•\s*(.*?)\n.*?View original post", text, re.DOTALL)
     data["flagged_posts"] = [{
         "content": post[0].strip(),
         "date": post[1],
@@ -52,7 +69,7 @@ def extract_pdf_data(pdf_file):
         "include": True,
         "platform": "Unknown"  # You might want to extract this from the context
     } for post in posts]
-    
+
     return data
 
 def generate_pdf(data):
