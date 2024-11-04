@@ -1,4 +1,5 @@
 streamlit
-pymupdf  # PyMuPDF for PDF parsing
-reportlab  # For PDF generation
-pillow  # For handling images (PIL)
+PyMuPDF
+PyPDF2
+reportlab
+Pillow
