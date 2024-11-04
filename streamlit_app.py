@@ -1,21 +1,19 @@
+import re
 import streamlit as st
 import pdfplumber
-import re
-from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from PIL import Image
 import tempfile
+from io import BytesIO
 
 def extract_pdf_data(pdf_file):
     """Extract data from the uploaded PDF file."""
     with pdfplumber.open(pdf_file) as pdf:
-        text = ""
-        for page in pdf.pages:
-            text += page.extract_text() + "\n"
+        text = "\n".join(page.extract_text() for page in pdf.pages)
 
-    # Parse the text to extract relevant information
+    # Parse data using updated regex patterns
     data = {
         "name": re.search(r"^(.*?)\n", text).group(1).strip() if re.search(r"^(.*?)\n", text) else "",
         "personal_details": {
@@ -34,43 +32,34 @@ def extract_pdf_data(pdf_file):
         "flagged_posts": []
     }
 
-    # Extract metrics with error handling
-    platforms_evaluated_match = re.search(r"(\d+)\s*Social platforms evaluated", text)
-    if platforms_evaluated_match:
-        data["metrics"]["platforms_evaluated"] = int(platforms_evaluated_match.group(1))
-
-    flagged_posts_match = re.search(r"(\d+)\s*Total flagged posts", text)
-    if flagged_posts_match:
-        data["metrics"]["flagged_posts"] = int(flagged_posts_match.group(1))
-
-    # Count the number of flagged categories
+    # Extract metrics
+    data["metrics"]["platforms_evaluated"] = int(re.search(r"(\d+)\s*Social platforms evaluated", text).group(1) or 0)
+    data["metrics"]["flagged_posts"] = int(re.search(r"(\d+)\s*Total flagged posts", text).group(1) or 0)
     data["metrics"]["flagged_categories"] = len(re.findall(r"potential issues found:", text))
 
-    # Extract social profiles
-    profiles_text_match = re.search(r"Social media profiles found:\s*(.*?)\n\n", text, re.DOTALL)
-    if profiles_text_match:
-        profiles_text = profiles_text_match.group(1)
-        data["social_profiles"] = [{"platform": "Unknown", "username": username.strip(), "url": ""}
-                                   for username in profiles_text.split("\n") if username.strip()]
+    # Extract social profiles (both usernames and URLs)
+    profiles_section = re.search(r"Social media profiles found:\s*(.*?)\n\n", text, re.DOTALL)
+    if profiles_section:
+        profiles_text = profiles_section.group(1)
+        for line in profiles_text.split("\n"):
+            if line.startswith("@") or line.startswith("https://"):
+                data["social_profiles"].append({"platform": "Unknown", "username": line.strip(), "url": line.strip()})
 
-    # Extract platforms with no matches
-    no_matches_match = re.search(r"Social media platforms with no matches found:\s*(.*?)\n\n", text, re.DOTALL)
-    if no_matches_match:
-        data["no_matches_platforms"] = [platform.strip() for platform in no_matches_match.group(1).split("\n") if platform.strip()]
-
-    # Extract flagged posts
-    posts = re.findall(r"(.*?)\nPosted on\s*•\s*(.*?)\n.*?View original post", text, re.DOTALL)
-    data["flagged_posts"] = [{
-        "content": post[0].strip(),
-        "date": post[1],
-        "url": "",
-        "include": True,
-        "platform": "Unknown"  # You might want to extract this from the context
-    } for post in posts]
+    # Extract flagged posts with improved date parsing
+    flagged_posts = re.findall(r"(.*?)\nPosted on\s*•\s*(\w+ \d{2}, \d{4} \d{2}:\d{2} [AP]M)", text, re.DOTALL)
+    for post in flagged_posts:
+        data["flagged_posts"].append({
+            "content": post[0].strip(),
+            "date": post[1].strip(),
+            "url": "",
+            "include": True,
+            "platform": "LinkedIn"
+        })
 
     return data
 
 def get_text_positions(pdf_file):
+    """Extract text positions from PDF for precise overlay positioning."""
     text_positions = []
     with pdfplumber.open(pdf_file) as pdf:
         for page_number, page in enumerate(pdf.pages):
@@ -81,12 +70,13 @@ def get_text_positions(pdf_file):
                     'text': word['text'],
                     'x0': word['x0'],
                     'top': word['top'],
-                    'size': word.get('size', 12),  # Default size if not available
-                    'fontname': word.get('fontname', 'Helvetica')  # Default font if not available
+                    'size': word.get('size', 12),
+                    'fontname': word.get('fontname', 'Helvetica')
                 })
     return text_positions
 
 def find_text_positions(text_positions, search_text):
+    """Find the positions of a specific text in the PDF."""
     positions = []
     for item in text_positions:
         if item['text'] == search_text:
@@ -94,31 +84,31 @@ def find_text_positions(text_positions, search_text):
     return positions
 
 def create_overlay(field_updates, positions_dict, page_size, profile_image=None):
+    """Create overlay PDF with updated data and profile image if available."""
     packet = BytesIO()
     c = canvas.Canvas(packet, pagesize=page_size)
 
-    # Draw updated fields
+    # Update text fields
     for field_name, data in field_updates.items():
         positions = positions_dict.get(field_name, [])
         for item in positions:
             x = item['x0']
-            y = page_size[1] - item['top']  # Adjust y-coordinate
+            y = page_size[1] - item['top']
             size = item['size']
             fontname = item['fontname']
 
             c.setFont(fontname, size)
-            # Draw white rectangle to cover old text
             c.setFillColorRGB(1, 1, 1)
-            c.rect(x, y - size, 200, size + 5, fill=1, stroke=0)  # Adjust rectangle dimensions
+            c.rect(x, y - size, 200, size + 5, fill=1, stroke=0)
             c.setFillColorRGB(0, 0, 0)
             c.drawString(x, y, data)
 
-    # Draw profile image if available
+    # Add profile image if provided
     if profile_image:
-        image_positions = positions_dict.get('profile_image', [])
-        for item in image_positions:
-            x = item['x0']
-            y = page_size[1] - item['top'] - 100  # Adjust as needed
+        img_positions = positions_dict.get("profile_image", [])
+        for item in img_positions:
+            x = item["x0"]
+            y = page_size[1] - item["top"] - 100
             c.drawImage(profile_image, x, y, width=100, height=100)
 
     c.save()
@@ -126,6 +116,7 @@ def create_overlay(field_updates, positions_dict, page_size, profile_image=None)
     return packet
 
 def merge_pdfs(original_pdf_stream, overlay_pdf_stream):
+    """Merge the original PDF with the overlay PDF."""
     original_pdf = PdfReader(original_pdf_stream)
     overlay_pdf = PdfReader(overlay_pdf_stream)
 
@@ -146,10 +137,9 @@ def merge_pdfs(original_pdf_stream, overlay_pdf_stream):
     return output_stream
 
 def generate_pdf(data, original_pdf_stream, profile_image_path=None):
-    # Step 1: Extract text positions
+    """Generate the updated PDF with overlay data and profile image."""
     text_positions = get_text_positions(original_pdf_stream)
 
-    # Step 2: Find positions to update
     fields_to_update = {
         'Name:': data['name'],
         'Jobs:': data['personal_details']['jobs'],
@@ -159,22 +149,14 @@ def generate_pdf(data, original_pdf_stream, profile_image_path=None):
         'Platforms Evaluated:': str(data['metrics']['platforms_evaluated']),
         'Flagged Posts:': str(data['metrics']['flagged_posts']),
         'Flagged Categories:': str(data['metrics']['flagged_categories']),
-        # Add more fields as needed
     }
 
-    positions_dict = {}
-    for field_label in fields_to_update.keys():
-        positions_dict[field_label] = find_text_positions(text_positions, field_label)
-
-    # For profile image, we need to decide on a placeholder text or coordinate
-    # Assuming there is a placeholder text 'Profile Image' in the PDF
+    positions_dict = {field: find_text_positions(text_positions, field) for field in fields_to_update.keys()}
     positions_dict['profile_image'] = find_text_positions(text_positions, 'Profile Image')
 
-    # Step 3: Create overlay PDF with new content
-    page_size = letter  # Adjust if your PDF uses a different page size
+    page_size = letter
     overlay_stream = create_overlay(fields_to_update, positions_dict, page_size, profile_image=profile_image_path)
 
-    # Step 4: Merge overlay with original PDF
     updated_pdf_stream = merge_pdfs(original_pdf_stream, overlay_stream)
 
     return updated_pdf_stream
@@ -194,7 +176,6 @@ def main():
         if st.session_state.data is None:
             st.session_state.data = extract_pdf_data(uploaded_file)
 
-        # Create two columns
         col1, col2 = st.columns(2)
 
         with col1:
@@ -237,56 +218,4 @@ def main():
         ]
 
         st.subheader("Metrics")
-        cols = st.columns(3)
-        with cols[0]:
-            st.session_state.data["metrics"]["platforms_evaluated"] = st.number_input(
-                "Platforms Evaluated",
-                min_value=0,
-                value=st.session_state.data["metrics"].get("platforms_evaluated", 0)
-            )
-        with cols[1]:
-            st.session_state.data["metrics"]["flagged_posts"] = st.number_input(
-                "Flagged Posts",
-                min_value=0,
-                value=st.session_state.data["metrics"].get("flagged_posts", 0)
-            )
-        with cols[2]:
-            st.session_state.data["metrics"]["flagged_categories"] = st.number_input(
-                "Flagged Categories",
-                min_value=0,
-                value=st.session_state.data["metrics"].get("flagged_categories", 0)
-            )
-
-        st.subheader("Flagged Posts")
-        for i, post in enumerate(st.session_state.data["flagged_posts"]):
-            with st.expander(f"Post {i+1}"):
-                post["include"] = st.checkbox("Include in report", post["include"], key=f"include_{i}")
-                post["platform"] = st.text_input("Platform", post["platform"], key=f"platform_{i}")
-                post["content"] = st.text_area("Content", post["content"], key=f"content_{i}")
-                post["date"] = st.text_input("Date", post["date"], key=f"date_{i}")
-                post["url"] = st.text_input("URL", post["url"], key=f"url_{i}")
-
-        if st.button("Generate Updated PDF"):
-            # Save profile image temporarily if provided
-            profile_image_path = None
-            if st.session_state.profile_image is not None:
-                img = Image.open(st.session_state.profile_image)
-                img = img.resize((100, 100))  # Resize image as needed
-                temp_image = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-                img.save(temp_image.name)
-                profile_image_path = temp_image.name
-
-            pdf_buffer = generate_pdf(st.session_state.data, uploaded_file, profile_image_path=profile_image_path)
-            st.download_button(
-                label="Download Updated PDF",
-                data=pdf_buffer,
-                file_name="updated_report.pdf",
-                mime="application/pdf"
-            )
-
-            # Clean up temporary image file
-            if profile_image_path:
-                temp_image.close()
-
-if __name__ == "__main__":
-    main()
+        cols = st.columns(3
