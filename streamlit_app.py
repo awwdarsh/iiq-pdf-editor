@@ -13,7 +13,7 @@ def extract_pdf_data(pdf_file):
     with pdfplumber.open(pdf_file) as pdf:
         text = "\n".join(page.extract_text() for page in pdf.pages)
 
-    # Parse data using updated regex patterns
+    # Parse data using updated regex patterns with safer handling
     data = {
         "name": re.search(r"^(.*?)\n", text).group(1).strip() if re.search(r"^(.*?)\n", text) else "",
         "personal_details": {
@@ -32,9 +32,16 @@ def extract_pdf_data(pdf_file):
         "flagged_posts": []
     }
 
-    # Extract metrics
-    data["metrics"]["platforms_evaluated"] = int(re.search(r"(\d+)\s*Social platforms evaluated", text).group(1) or 0)
-    data["metrics"]["flagged_posts"] = int(re.search(r"(\d+)\s*Total flagged posts", text).group(1) or 0)
+    # Extract metrics with error handling
+    platforms_evaluated_match = re.search(r"(\d+)\s*Social platforms evaluated", text)
+    if platforms_evaluated_match:
+        data["metrics"]["platforms_evaluated"] = int(platforms_evaluated_match.group(1))
+
+    flagged_posts_match = re.search(r"(\d+)\s*Total flagged posts", text)
+    if flagged_posts_match:
+        data["metrics"]["flagged_posts"] = int(flagged_posts_match.group(1))
+
+    # Count the number of flagged categories
     data["metrics"]["flagged_categories"] = len(re.findall(r"potential issues found:", text))
 
     # Extract social profiles (both usernames and URLs)
