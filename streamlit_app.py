@@ -43,6 +43,7 @@ def extract_pdf_data(pdf_file):
     if flagged_posts_match:
         data["metrics"]["flagged_posts"] = int(flagged_posts_match.group(1))
 
+    # Count the number of flagged categories
     data["metrics"]["flagged_categories"] = len(re.findall(r"potential issues found:", text))
 
     # Extract social profiles
@@ -150,17 +151,20 @@ def generate_pdf(data, original_pdf_stream, profile_image_path=None):
 
     # Step 2: Find positions to update
     fields_to_update = {
-        'name': data['name'],
-        'jobs': data['personal_details']['jobs'],
-        'colleges': data['personal_details']['colleges'],
-        'emails': data['personal_details']['emails'],
-        'locations': data['personal_details']['locations'],
+        'Name:': data['name'],
+        'Jobs:': data['personal_details']['jobs'],
+        'Colleges:': data['personal_details']['colleges'],
+        'Emails:': data['personal_details']['emails'],
+        'Locations:': data['personal_details']['locations'],
+        'Platforms Evaluated:': str(data['metrics']['platforms_evaluated']),
+        'Flagged Posts:': str(data['metrics']['flagged_posts']),
+        'Flagged Categories:': str(data['metrics']['flagged_categories']),
         # Add more fields as needed
     }
 
     positions_dict = {}
-    for field_name in fields_to_update.keys():
-        positions_dict[field_name] = find_text_positions(text_positions, field_name.capitalize() + ":")
+    for field_label in fields_to_update.keys():
+        positions_dict[field_label] = find_text_positions(text_positions, field_label)
 
     # For profile image, we need to decide on a placeholder text or coordinate
     # Assuming there is a placeholder text 'Profile Image' in the PDF
@@ -238,19 +242,19 @@ def main():
             st.session_state.data["metrics"]["platforms_evaluated"] = st.number_input(
                 "Platforms Evaluated",
                 min_value=0,
-                value=st.session_state.data["metrics"]["platforms_evaluated"]
+                value=st.session_state.data["metrics"].get("platforms_evaluated", 0)
             )
         with cols[1]:
             st.session_state.data["metrics"]["flagged_posts"] = st.number_input(
                 "Flagged Posts",
                 min_value=0,
-                value=st.session_state.data["metrics"]["flagged_posts"]
+                value=st.session_state.data["metrics"].get("flagged_posts", 0)
             )
         with cols[2]:
             st.session_state.data["metrics"]["flagged_categories"] = st.number_input(
                 "Flagged Categories",
                 min_value=0,
-                value=st.session_state.data["metrics"]["flagged_categories"]
+                value=st.session_state.data["metrics"].get("flagged_categories", 0)
             )
 
         st.subheader("Flagged Posts")
