@@ -219,7 +219,7 @@ def main():
 
         st.subheader("Metrics")
         cols = st.columns(3)
-                with cols[0]:
+        with cols[0]:
             st.session_state.data["metrics"]["platforms_evaluated"] = st.number_input(
                 "Platforms Evaluated",
                 min_value=0,
