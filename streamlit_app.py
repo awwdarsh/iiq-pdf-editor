@@ -218,4 +218,56 @@ def main():
         ]
 
         st.subheader("Metrics")
-        cols = st.columns(3
+        cols = st.columns(3)
+                with cols[0]:
+            st.session_state.data["metrics"]["platforms_evaluated"] = st.number_input(
+                "Platforms Evaluated",
+                min_value=0,
+                value=st.session_state.data["metrics"].get("platforms_evaluated", 0)
+            )
+        with cols[1]:
+            st.session_state.data["metrics"]["flagged_posts"] = st.number_input(
+                "Flagged Posts",
+                min_value=0,
+                value=st.session_state.data["metrics"].get("flagged_posts", 0)
+            )
+        with cols[2]:
+            st.session_state.data["metrics"]["flagged_categories"] = st.number_input(
+                "Flagged Categories",
+                min_value=0,
+                value=st.session_state.data["metrics"].get("flagged_categories", 0)
+            )
+
+        st.subheader("Flagged Posts")
+        for i, post in enumerate(st.session_state.data["flagged_posts"]):
+            with st.expander(f"Post {i+1}"):
+                post["include"] = st.checkbox("Include in report", post["include"], key=f"include_{i}")
+                post["platform"] = st.text_input("Platform", post["platform"], key=f"platform_{i}")
+                post["content"] = st.text_area("Content", post["content"], key=f"content_{i}")
+                post["date"] = st.text_input("Date", post["date"], key=f"date_{i}")
+                post["url"] = st.text_input("URL", post["url"], key=f"url_{i}")
+
+        if st.button("Generate Updated PDF"):
+            # Save profile image temporarily if provided
+            profile_image_path = None
+            if st.session_state.profile_image is not None:
+                img = Image.open(st.session_state.profile_image)
+                img = img.resize((100, 100))  # Resize image as needed
+                temp_image = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+                img.save(temp_image.name)
+                profile_image_path = temp_image.name
+
+            pdf_buffer = generate_pdf(st.session_state.data, uploaded_file, profile_image_path=profile_image_path)
+            st.download_button(
+                label="Download Updated PDF",
+                data=pdf_buffer,
+                file_name="updated_report.pdf",
+                mime="application/pdf"
+            )
+
+            # Clean up temporary image file
+            if profile_image_path:
+                temp_image.close()
+
+if __name__ == "__main__":
+    main()
